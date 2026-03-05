@@ -1,0 +1,19 @@
+name: incidentlog
+services:
+  backend:
+    build: ./backend
+    container_name: incidentlog-backend
+    ports: ["3099:3099"]
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3099
+      - TZ=America/New_York
+    restart: unless-stopped
+  frontend:
+    build: ./frontend
+    container_name: incidentlog-frontend
+    ports: ["8287:80"]
+    depends_on: [backend]
+    restart: unless-stopped

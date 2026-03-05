@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IncidentLog — Infrastructure Incident Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+    .pulse-red { animation: pulse-red 2s infinite; }
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+    }
+    .timeline-line::before {
+      content: '';
+      position: absolute;
+      left: 11px;
+      top: 24px;
+      bottom: 0;
+      width: 2px;
+      background: #374151;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    .prose-dark { color: #d1d5db; line-height: 1.7; }
+    .prose-dark h2 { color: #f9fafb; font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+    .prose-dark h3 { color: #e5e7eb; font-size: 1rem; font-weight: 500; margin: 0.75rem 0 0.4rem; }
+    .prose-dark ul, .prose-dark ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+    .prose-dark li { margin: 0.25rem 0; }
+    .prose-dark p { margin: 0.5rem 0; }
+    .prose-dark strong { color: #f9fafb; }
+    .modal-bg { backdrop-filter: blur(4px); }
+    .card-hover { transition: all 0.15s ease; }
+    .card-hover:hover { transform: translateY(-1px); border-color: #4b5563; }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.5); }
+    select option { background: #1f2937; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+<!-- Top Nav -->
+<nav class="bg-gray-900 border-b border-gray-800 sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">🚨</span>
+      <div>
+        <h1 class="text-white font-bold text-lg leading-none">IncidentLog</h1>
+        <p class="text-gray-500 text-xs">Infrastructure Incident Tracker</p>
+      </div>
+    </div>
+    <button onclick="openCreateModal()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+      <span>⚡</span> New Incident
+    </button>
+  </div>
+</nav>
+
+<!-- Main -->
+<div class="max-w-7xl mx-auto px-4 py-6" id="main-view">
+
+  <!-- Active Incidents Banner -->
+  <div id="active-banner" class="hidden mb-6"></div>
+
+  <!-- Stats Bar -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" id="stats-bar">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-2xl font-bold text-white" id="stat-total">—</div>
+      <div class="text-xs text-gray-500 mt-1">Total Incidents</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-2xl font-bold text-red-400" id="stat-active">—</div>
+      <div class="text-xs text-gray-500 mt-1">Active</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-2xl font-bold text-amber-400" id="stat-mttr">—</div>
+      <div class="text-xs text-gray-500 mt-1">MTTR (min)</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-2xl font-bold text-emerald-400" id="stat-resolved-week">—</div>
+      <div class="text-xs text-gray-500 mt-1">Resolved This Week</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">Severity</label>
+      <select id="filter-severity" onchange="loadIncidents()" class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+        <option value="">All Severity</option>
+        <option value="critical">🔴 Critical</option>
+        <option value="major">🟡 Major</option>
+        <option value="minor">🔵 Minor</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">Status</label>
+      <select id="filter-status" onchange="loadIncidents()" class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+        <option value="">All Status</option>
+        <option value="investigating">Investigating</option>
+        <option value="identified">Identified</option>
+        <option value="monitoring">Monitoring</option>
+        <option value="resolved">Resolved</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">From</label>
+      <input type="date" id="filter-from" onchange="loadIncidents()" class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2"/>
+    </div>
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">To</label>
+      <input type="date" id="filter-to" onchange="loadIncidents()" class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2"/>
+    </div>
+    <button onclick="clearFilters()" class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-2 rounded-lg transition-colors">Clear</button>
+  </div>
+
+  <!-- Incident List -->
+  <div id="incident-list" class="space-y-3"></div>
+</div>
+
+<!-- Detail Modal -->
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 modal-bg bg-black/70 overflow-y-auto">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl shadow-2xl mb-8" id="detail-content">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<!-- Create Modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 modal-bg bg-black/70">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg shadow-2xl">
+    <div class="p-6 border-b border-gray-800 flex justify-between items-center">
+      <h2 class="text-lg font-bold text-white">⚡ New Incident</h2>
+      <button onclick="closeCreateModal()" class="text-gray-500 hover:text-gray-300 text-xl">✕</button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Title *</label>
+        <input id="new-title" type="text" placeholder="Brief incident title" class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500"/>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Severity</label>
+          <select id="new-severity" class="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+            <option value="critical">🔴 Critical</option>
+            <option value="major">🟡 Major</option>
+            <option value="minor" selected>🔵 Minor</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Status</label>
+          <select id="new-status" class="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2">
+            <option value="investigating" selected>Investigating</option>
+            <option value="identified">Identified</option>
+            <option value="monitoring">Monitoring</option>
+            <option value="resolved">Resolved</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Affected Services (comma-separated)</label>
+        <input id="new-services" type="text" placeholder="e.g. API, Database, Auth" class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500"/>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Detected By</label>
+        <input id="new-detectedBy" type="text" placeholder="e.g. sentry, dick, monitoring" class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500"/>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Description</label>
+        <textarea id="new-description" rows="2" placeholder="Initial description..." class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500 resize-none"></textarea>
+      </div>
+    </div>
+    <div class="p-6 pt-0 flex gap-3 justify-end">
+      <button onclick="closeCreateModal()" class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded-lg text-sm transition-colors">Cancel</button>
+      <button onclick="createIncident()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Create Incident</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let allIncidents = [];
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function severityBadge(s) {
+  const map = {
+    critical: 'bg-red-500/20 text-red-400 border border-red-500/30',
+    major: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+    minor: 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+  };
+  const icons = { critical: '🔴', major: '🟡', minor: '🔵' };
+  return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${map[s]||'bg-gray-700 text-gray-400'}">${icons[s]||'⚪'} ${s}</span>`;
+}
+
+function statusBadge(s) {
+  const map = {
+    investigating: 'bg-red-500/20 text-red-400 border border-red-500/30',
+    identified: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+    monitoring: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
+    resolved: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+  };
+  const pulse = s === 'investigating' ? ' pulse-red' : '';
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${map[s]||'bg-gray-700 text-gray-400'}${pulse}">${s}</span>`;
+}
+
+function timeAgo(dt) {
+  if (!dt) return '';
+  const d = new Date(dt.replace(' ', 'T'));
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function fmtDuration(min) {
+  if (!min || min === 0) return '—';
+  if (min < 60) return `${min}m`;
+  return `${Math.floor(min/60)}h ${min%60}m`;
+}
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+async function loadStats() {
+  const r = await fetch(`${API}/stats`);
+  const d = await r.json();
+  document.getElementById('stat-total').textContent = d.total;
+  document.getElementById('stat-active').textContent = d.active;
+  document.getElementById('stat-mttr').textContent = d.mttr || '—';
+  document.getElementById('stat-resolved-week').textContent = d.resolvedThisWeek;
+}
+
+// ─── Active Banner ────────────────────────────────────────────────────────────
+function renderActiveBanner(incidents) {
+  const active = incidents.filter(i => ['investigating','identified'].includes(i.status));
+  const banner = document.getElementById('active-banner');
+  if (active.length === 0) { banner.classList.add('hidden'); return; }
+  banner.classList.remove('hidden');
+  banner.innerHTML = `
+    <div class="bg-red-950/40 border border-red-800/50 rounded-xl p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 pulse-red"></span>
+        <span class="text-red-400 font-semibold text-sm">${active.length} Active Incident${active.length>1?'s':''}</span>
+      </div>
+      <div class="space-y-2">
+        ${active.map(i => `
+          <div class="flex items-center gap-3 cursor-pointer hover:text-white transition-colors" onclick="openDetail(${i.id})">
+            ${severityBadge(i.severity)}
+            <span class="text-gray-200 text-sm font-medium flex-1">${i.title}</span>
+            ${statusBadge(i.status)}
+            <span class="text-gray-500 text-xs">${timeAgo(i.detectedAt)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ─── Incident List ────────────────────────────────────────────────────────────
+async function loadIncidents() {
+  const severity = document.getElementById('filter-severity').value;
+  const status = document.getElementById('filter-status').value;
+  const from = document.getElementById('filter-from').value;
+  const to = document.getElementById('filter-to').value;
+
+  const params = new URLSearchParams();
+  if (severity) params.set('severity', severity);
+  if (status) params.set('status', status);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to + 'T23:59:59');
+  params.set('limit', '100');
+
+  const r = await fetch(`${API}/incidents?${params}`);
+  const incidents = await r.json();
+  allIncidents = incidents;
+  renderActiveBanner(incidents);
+  renderList(incidents);
+}
+
+function renderList(incidents) {
+  const el = document.getElementById('incident-list');
+  if (incidents.length === 0) {
+    el.innerHTML = `<div class="text-center py-16 text-gray-600">
+      <div class="text-5xl mb-4">✅</div>
+      <p class="text-lg">No incidents found</p>
+    </div>`;
+    return;
+  }
+  el.innerHTML = incidents.map(i => `
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 cursor-pointer card-hover" onclick="openDetail(${i.id})">
+      <div class="flex flex-wrap items-start gap-2 mb-2">
+        ${severityBadge(i.severity)}
+        ${statusBadge(i.status)}
+        <span class="text-white font-semibold text-sm flex-1">${i.title}</span>
+      </div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+        ${i.affectedServices.length ? `<span>📦 ${i.affectedServices.join(', ')}</span>` : ''}
+        ${i.duration ? `<span>⏱ ${fmtDuration(i.duration)}</span>` : ''}
+        ${i.detectedBy ? `<span>👁 ${i.detectedBy}</span>` : ''}
+        <span>🕐 ${timeAgo(i.detectedAt)}</span>
+        ${i.resolvedBy ? `<span>✅ ${i.resolvedBy}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function clearFilters() {
+  document.getElementById('filter-severity').value = '';
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  loadIncidents();
+}
+
+// ─── Detail Modal ─────────────────────────────────────────────────────────────
+async function openDetail(id) {
+  const r = await fetch(`${API}/incidents/${id}`);
+  const inc = await r.json();
+  renderDetail(inc);
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+
+function closeDetail() {
+  document.getElementById('detail-modal').classList.add('hidden');
+  loadIncidents();
+  loadStats();
+}
+
+function renderDetail(inc) {
+  const el = document.getElementById('detail-content');
+  const postmortemHtml = inc.postmortem
+    ? `<div class="prose-dark">${marked.parse(inc.postmortem)}</div>`
+    : `<p class="text-gray-500 text-sm italic">No postmortem written yet.</p>`;
+
+  el.innerHTML = `
+    <!-- Header -->
+    <div class="p-6 border-b border-gray-800">
+      <div class="flex justify-between items-start mb-3">
+        <div class="flex flex-wrap gap-2">
+          ${severityBadge(inc.severity)}
+          ${statusBadge(inc.status)}
+        </div>
+        <button onclick="closeDetail()" class="text-gray-500 hover:text-gray-300 text-xl ml-4">✕</button>
+      </div>
+      <h2 class="text-xl font-bold text-white mb-2">${inc.title}</h2>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+        ${inc.affectedServices.length ? `<span>📦 ${inc.affectedServices.join(', ')}</span>` : ''}
+        ${inc.duration ? `<span>⏱ ${fmtDuration(inc.duration)}</span>` : ''}
+        ${inc.detectedBy ? `<span>👁 Detected by: ${inc.detectedBy}</span>` : ''}
+        ${inc.resolvedBy ? `<span>✅ Resolved by: ${inc.resolvedBy}</span>` : ''}
+        <span>🕐 ${inc.detectedAt}</span>
+        ${inc.resolvedAt ? `<span>✅ ${inc.resolvedAt}</span>` : ''}
+      </div>
+    </div>
+
+    <!-- Status Actions -->
+    <div class="p-4 border-b border-gray-800 flex flex-wrap gap-2">
+      <span class="text-xs text-gray-500 self-center mr-2">Update Status:</span>
+      ${['investigating','identified','monitoring','resolved'].map(s =>
+        s !== inc.status ? `<button onclick="updateStatus(${inc.id},'${s}')" class="text-xs px-3 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors">${s}</button>` : ''
+      ).join('')}
+    </div>
+
+    <div class="p-6 space-y-5">
+
+      <!-- Root Cause + Fix -->
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="bg-gray-800/50 rounded-xl p-4">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">🔍 Root Cause</h3>
+          <p id="rc-text-${inc.id}" class="text-gray-200 text-sm">${inc.rootCause || '<span class="text-gray-600">Not identified yet</span>'}</p>
+          <textarea id="rc-edit-${inc.id}" class="hidden w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm mt-2 resize-none" rows="3">${inc.rootCause || ''}</textarea>
+          <div class="mt-2 flex gap-2">
+            <button onclick="toggleEdit('rc',${inc.id})" class="text-xs text-blue-400 hover:text-blue-300">Edit</button>
+            <button id="rc-save-${inc.id}" onclick="saveField(${inc.id},'rootCause','rc')" class="hidden text-xs text-emerald-400 hover:text-emerald-300">Save</button>
+          </div>
+        </div>
+        <div class="bg-gray-800/50 rounded-xl p-4">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">🔧 Fix Applied</h3>
+          <p id="fix-text-${inc.id}" class="text-gray-200 text-sm">${inc.fix || '<span class="text-gray-600">No fix applied yet</span>'}</p>
+          <textarea id="fix-edit-${inc.id}" class="hidden w-full bg-gray-900 border border-gray-600 text-gray-100 rounded-lg px-3 py-2 text-sm mt-2 resize-none" rows="3">${inc.fix || ''}</textarea>
+          <div class="mt-2 flex gap-2">
+            <button onclick="toggleEdit('fix',${inc.id})" class="text-xs text-blue-400 hover:text-blue-300">Edit</button>
+            <button id="fix-save-${inc.id}" onclick="saveField(${inc.id},'fix','fix')" class="hidden text-xs text-emerald-400 hover:text-emerald-300">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <div>
+        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">📋 Timeline</h3>
+        <div class="relative pl-6" id="timeline-${inc.id}">
+          ${renderTimeline(inc.timeline || [])}
+        </div>
+        <div class="mt-3 flex gap-2">
+          <input type="text" id="tl-event-${inc.id}" placeholder="Add timeline event..." class="flex-1 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500"/>
+          <input type="text" id="tl-author-${inc.id}" placeholder="Author" class="w-28 bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500"/>
+          <button onclick="addTimeline(${inc.id})" class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg text-sm transition-colors">Add</button>
+        </div>
+      </div>
+
+      <!-- Postmortem -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">📄 Postmortem</h3>
+          <button onclick="togglePostmortem(${inc.id})" id="pm-toggle-${inc.id}" class="text-xs text-blue-400 hover:text-blue-300">${inc.postmortem ? 'Edit' : 'Write Postmortem'}</button>
+        </div>
+        <div id="pm-view-${inc.id}">${postmortemHtml}</div>
+        <div id="pm-edit-${inc.id}" class="hidden">
+          <textarea id="pm-textarea-${inc.id}" rows="12" class="w-full bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-gray-500 resize-none font-mono">${inc.postmortem || getPostmortemTemplate(inc)}</textarea>
+          <div class="mt-2 flex gap-2">
+            <button onclick="savePostmortem(${inc.id})" class="bg-emerald-700 hover:bg-emerald-600 text-white text-sm px-4 py-2 rounded-lg transition-colors">Save Postmortem</button>
+            <button onclick="cancelPostmortem(${inc.id})" class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-4 py-2 rounded-lg transition-colors">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderTimeline(events) {
+  if (!events.length) return '<p class="text-gray-600 text-sm">No timeline events yet.</p>';
+  return events.map((e, i) => `
+    <div class="relative ${i < events.length-1 ? 'timeline-line' : ''} flex gap-3 mb-4">
+      <div class="relative z-10 w-6 h-6 rounded-full bg-gray-700 border-2 border-gray-600 flex-shrink-0 flex items-center justify-center">
+        <div class="w-2 h-2 rounded-full bg-blue-400"></div>
+      </div>
+      <div class="flex-1 pb-1">
+        <p class="text-gray-200 text-sm">${e.event}</p>
+        <p class="text-gray-600 text-xs mt-0.5">${e.author ? `${e.author} · ` : ''}${e.createdAt}</p>
+      </div>
+    </div>
+  `).join('');
+}
+
+function getPostmortemTemplate(inc) {
+  return `## Summary
+${inc.title}
+
+## Impact
+- Affected services: ${(inc.affectedServices || []).join(', ') || 'Unknown'}
+- Duration: ${fmtDuration(inc.duration)}
+- Severity: ${inc.severity}
+
+## Timeline
+| Time | Event |
+|------|-------|
+| ${inc.detectedAt} | Incident detected |
+| ${inc.resolvedAt || 'TBD'} | Incident resolved |
+
+## Root Cause
+${inc.rootCause || 'To be determined'}
+
+## Fix Applied
+${inc.fix || 'To be determined'}
+
+## Prevention
+- [ ] Action item 1
+- [ ] Action item 2
+`;
+}
+
+function toggleEdit(field, id) {
+  const textEl = document.getElementById(`${field}-text-${id}`);
+  const editEl = document.getElementById(`${field}-edit-${id}`);
+  const saveBtn = document.getElementById(`${field}-save-${id}`);
+  const isHidden = editEl.classList.contains('hidden');
+  if (isHidden) {
+    textEl.classList.add('hidden');
+    editEl.classList.remove('hidden');
+    saveBtn.classList.remove('hidden');
+  } else {
+    textEl.classList.remove('hidden');
+    editEl.classList.add('hidden');
+    saveBtn.classList.add('hidden');
+  }
+}
+
+async function saveField(id, fieldName, prefix) {
+  const val = document.getElementById(`${prefix}-edit-${id}`).value;
+  await fetch(`${API}/incidents/${id}`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({[fieldName]: val})
+  });
+  document.getElementById(`${prefix}-text-${id}`).textContent = val || 'Not set';
+  toggleEdit(prefix, id);
+}
+
+async function updateStatus(id, status) {
+  await fetch(`${API}/incidents/${id}`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  const r = await fetch(`${API}/incidents/${id}`);
+  const inc = await r.json();
+  renderDetail(inc);
+}
+
+async function addTimeline(id) {
+  const event = document.getElementById(`tl-event-${id}`).value.trim();
+  const author = document.getElementById(`tl-author-${id}`).value.trim();
+  if (!event) return;
+  const r = await fetch(`${API}/incidents/${id}/timeline`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({event, author})
+  });
+  const re = await fetch(`${API}/incidents/${id}`);
+  const inc = await re.json();
+  document.getElementById(`timeline-${id}`).innerHTML = renderTimeline(inc.timeline || []);
+  document.getElementById(`tl-event-${id}`).value = '';
+}
+
+function togglePostmortem(id) {
+  const view = document.getElementById(`pm-view-${id}`);
+  const edit = document.getElementById(`pm-edit-${id}`);
+  const btn = document.getElementById(`pm-toggle-${id}`);
+  if (edit.classList.contains('hidden')) {
+    view.classList.add('hidden');
+    edit.classList.remove('hidden');
+    btn.textContent = 'Cancel';
+  } else {
+    view.classList.remove('hidden');
+    edit.classList.add('hidden');
+    btn.textContent = 'Edit';
+  }
+}
+
+async function savePostmortem(id) {
+  const val = document.getElementById(`pm-textarea-${id}`).value;
+  await fetch(`${API}/incidents/${id}`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({postmortem: val})
+  });
+  const view = document.getElementById(`pm-view-${id}`);
+  view.innerHTML = `<div class="prose-dark">${marked.parse(val)}</div>`;
+  cancelPostmortem(id);
+}
+
+function cancelPostmortem(id) {
+  document.getElementById(`pm-view-${id}`).classList.remove('hidden');
+  document.getElementById(`pm-edit-${id}`).classList.add('hidden');
+  document.getElementById(`pm-toggle-${id}`).textContent = 'Edit';
+}
+
+// ─── Create Modal ─────────────────────────────────────────────────────────────
+function openCreateModal() {
+  document.getElementById('create-modal').classList.remove('hidden');
+}
+function closeCreateModal() {
+  document.getElementById('create-modal').classList.add('hidden');
+}
+
+async function createIncident() {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { alert('Title required'); return; }
+  const services = document.getElementById('new-services').value.split(',').map(s=>s.trim()).filter(Boolean);
+  await fetch(`${API}/incidents`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title,
+      severity: document.getElementById('new-severity').value,
+      status: document.getElementById('new-status').value,
+      affectedServices: services,
+      detectedBy: document.getElementById('new-detectedBy').value.trim(),
+      description: document.getElementById('new-description').value.trim()
+    })
+  });
+  closeCreateModal();
+  loadIncidents();
+  loadStats();
+}
+
+// ─── Close on backdrop ────────────────────────────────────────────────────────
+document.getElementById('detail-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('detail-modal')) closeDetail();
+});
+document.getElementById('create-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('create-modal')) closeCreateModal();
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadStats(), loadIncidents()]);
+  setInterval(() => { loadIncidents(); loadStats(); }, 30000);
+}
+init();
+</script>
+</body>
+</html>
