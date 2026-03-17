@@ -1,6 +1,7 @@
 name: incidentlog
 services:
   backend:
+    image: incidentlog-backend
     build: ./backend
     container_name: incidentlog-backend
     ports: ["3099:3099"]
@@ -12,6 +13,7 @@ services:
       - TZ=America/New_York
     restart: unless-stopped
   frontend:
+    image: incidentlog-frontend
     build: ./frontend
     container_name: incidentlog-frontend
     ports: ["8287:80"]
